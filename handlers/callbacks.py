@@ -79,22 +79,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
     
     elif data == "settings":
-        model = user_data.get("preferred_model", "gpt-4o-mini")
-        sub_info = await sub_service.get_subscription_info(user.id)
+        logger.info(f"User {user.id} opened settings")
+        try:
+            model = user_data.get("preferred_model", "gemini-2.0-flash") if user_data else "gemini-2.0-flash"
+            sub_info = await sub_service.get_subscription_info(user.id)
 
-        text = get_text("settings_menu", lang,
-            model=model,
-            language=LANGUAGES.get(lang, lang),
-            subscription=sub_info["tier_name"]
-        )
+            text = get_text("settings_menu", lang,
+                model=model,
+                language=LANGUAGES.get(lang, lang),
+                subscription=sub_info["tier_name"]
+            )
 
-        keyboard = [
-            [InlineKeyboardButton("🤖 Change Model", callback_data="select_model")],
-            [InlineKeyboardButton("🌐 Change Language", callback_data="select_language")],
-            [InlineKeyboardButton("💎 Subscription", callback_data="subscribe")],
-            [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
-        ]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            keyboard = [
+                [InlineKeyboardButton("🤖 Change Model", callback_data="select_model")],
+                [InlineKeyboardButton("🌐 Change Language", callback_data="select_language")],
+                [InlineKeyboardButton("💎 Subscription", callback_data="subscribe")],
+                [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
+            ]
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Settings error: {e}")
+            await query.answer(f"Error: {e}", show_alert=True)
     
     elif data == "select_model":
         models = ai_service.get_available_models()
