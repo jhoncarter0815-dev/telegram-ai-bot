@@ -1,0 +1,10 @@
+python-telegram-bot[all]==21.6
+google-generativeai>=0.8.5
+aiosqlite==0.20.0
+python-dotenv==1.0.1
+pydub==0.25.1
+Pillow==10.4.0
+httpx>=0.28.1
+tenacity==9.0.0
+aiofiles==24.1.0
+
