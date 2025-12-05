@@ -118,12 +118,32 @@ class Database:
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             );
             
+            -- Redeem codes table
+            CREATE TABLE IF NOT EXISTS redeem_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                code_type TEXT NOT NULL,
+                duration_days INTEGER DEFAULT 0,
+                credits INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP,
+                is_used INTEGER DEFAULT 0,
+                used_by INTEGER,
+                used_at TIMESTAMP,
+                is_revoked INTEGER DEFAULT 0,
+                created_by INTEGER,
+                FOREIGN KEY (used_by) REFERENCES users(user_id),
+                FOREIGN KEY (created_by) REFERENCES users(user_id)
+            );
+
             -- Create indexes for better query performance
             CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
             CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
             CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
             CREATE INDEX IF NOT EXISTS idx_subscriptions_active ON subscriptions(is_active);
             CREATE INDEX IF NOT EXISTS idx_stats_date ON bot_stats(stat_date);
+            CREATE INDEX IF NOT EXISTS idx_redeem_codes_code ON redeem_codes(code);
+            CREATE INDEX IF NOT EXISTS idx_redeem_codes_used ON redeem_codes(is_used);
         """)
         await self.connection.commit()
         logger.info("Database tables created/verified")

@@ -188,6 +188,37 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "ru": "❌ Не удалось создать видео. Попробуйте другой запрос.",
         "es": "❌ Error al generar video. Por favor intenta con otra descripción.",
     },
+    # Redeem code translations
+    "redeem_enter_code": {
+        "en": "🎁 **Redeem Code**\n\nTo redeem a code, use the command:\n\n`/redeem YOUR-CODE-HERE`\n\nExample: `/redeem PREM-ABCD-EFGH-1234`",
+        "ru": "🎁 **Активировать код**\n\nДля активации кода используйте команду:\n\n`/redeem ВАШ-КОД-ЗДЕСЬ`\n\nПример: `/redeem PREM-ABCD-EFGH-1234`",
+        "es": "🎁 **Canjear Código**\n\nPara canjear un código, usa el comando:\n\n`/redeem TU-CODIGO-AQUI`\n\nEjemplo: `/redeem PREM-ABCD-EFGH-1234`",
+    },
+    "redeem_invalid": {
+        "en": "❌ Invalid code. Please check and try again.",
+        "ru": "❌ Неверный код. Проверьте и попробуйте снова.",
+        "es": "❌ Código inválido. Por favor verifica e intenta de nuevo.",
+    },
+    "redeem_already_used": {
+        "en": "❌ This code has already been used.",
+        "ru": "❌ Этот код уже был использован.",
+        "es": "❌ Este código ya ha sido usado.",
+    },
+    "redeem_expired": {
+        "en": "❌ This code has expired.",
+        "ru": "❌ Срок действия этого кода истёк.",
+        "es": "❌ Este código ha expirado.",
+    },
+    "redeem_success_premium": {
+        "en": "🎉 **Code Redeemed Successfully!**\n\n✨ You've received **{days} days** of Premium subscription!\n\nEnjoy all premium features!",
+        "ru": "🎉 **Код успешно активирован!**\n\n✨ Вы получили **{days} дней** Премиум подписки!\n\nНаслаждайтесь всеми премиум функциями!",
+        "es": "🎉 **¡Código Canjeado Exitosamente!**\n\n✨ ¡Has recibido **{days} días** de suscripción Premium!\n\n¡Disfruta todas las funciones premium!",
+    },
+    "redeem_success_credits": {
+        "en": "🎉 **Code Redeemed Successfully!**\n\n✨ You've received **{credits} message credits**!\n\nSend more messages and enjoy chatting!",
+        "ru": "🎉 **Код успешно активирован!**\n\n✨ Вы получили **{credits} кредитов сообщений**!\n\nОтправляйте больше сообщений и наслаждайтесь общением!",
+        "es": "🎉 **¡Código Canjeado Exitosamente!**\n\n✨ ¡Has recibido **{credits} créditos de mensajes**!\n\n¡Envía más mensajes y disfruta chateando!",
+    },
 }
 
 

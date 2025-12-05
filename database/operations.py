@@ -352,6 +352,93 @@ class DatabaseOperations:
         )
         return row["total"] if row and row["total"] else 0
 
+    # ==================== Redeem Code Operations ====================
+
+    async def create_redeem_code(
+        self,
+        code: str,
+        code_type: str,
+        duration_days: int = 0,
+        credits: int = 0,
+        expires_at: datetime = None,
+        created_by: int = None
+    ) -> int:
+        """Create a new redeem code."""
+        cursor = await self.db.execute(
+            """INSERT INTO redeem_codes
+               (code, code_type, duration_days, credits, expires_at, created_by)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (code, code_type, duration_days, credits,
+             expires_at.isoformat() if expires_at else None, created_by)
+        )
+        return cursor.lastrowid
+
+    async def get_redeem_code(self, code: str) -> Optional[Dict]:
+        """Get a redeem code by code string."""
+        row = await self.db.fetch_one(
+            "SELECT * FROM redeem_codes WHERE code = ?", (code.upper(),)
+        )
+        return dict(row) if row else None
+
+    async def use_redeem_code(self, code: str, user_id: int) -> bool:
+        """Mark a code as used by a user."""
+        await self.db.execute(
+            """UPDATE redeem_codes
+               SET is_used = 1, used_by = ?, used_at = CURRENT_TIMESTAMP
+               WHERE code = ?""",
+            (user_id, code.upper())
+        )
+        return True
+
+    async def revoke_redeem_code(self, code: str) -> bool:
+        """Revoke a redeem code."""
+        result = await self.db.execute(
+            "UPDATE redeem_codes SET is_revoked = 1 WHERE code = ?",
+            (code.upper(),)
+        )
+        return result.rowcount > 0
+
+    async def get_all_redeem_codes(self, limit: int = 50) -> List[Dict]:
+        """Get all redeem codes with status."""
+        rows = await self.db.fetch_all(
+            """SELECT * FROM redeem_codes
+               ORDER BY created_at DESC LIMIT ?""",
+            (limit,)
+        )
+        return [dict(row) for row in rows]
+
+    async def get_redeem_code_stats(self) -> Dict:
+        """Get statistics about redeem codes."""
+        total = await self.db.fetch_one(
+            "SELECT COUNT(*) as count FROM redeem_codes"
+        )
+        used = await self.db.fetch_one(
+            "SELECT COUNT(*) as count FROM redeem_codes WHERE is_used = 1"
+        )
+        active = await self.db.fetch_one(
+            """SELECT COUNT(*) as count FROM redeem_codes
+               WHERE is_used = 0 AND is_revoked = 0
+               AND (expires_at IS NULL OR expires_at > datetime('now'))"""
+        )
+        revoked = await self.db.fetch_one(
+            "SELECT COUNT(*) as count FROM redeem_codes WHERE is_revoked = 1"
+        )
+        return {
+            "total": total["count"] if total else 0,
+            "used": used["count"] if used else 0,
+            "active": active["count"] if active else 0,
+            "revoked": revoked["count"] if revoked else 0
+        }
+
+    async def add_user_credits(self, user_id: int, credits: int) -> None:
+        """Add message credits to a user."""
+        await self.db.execute(
+            """UPDATE users
+               SET message_count = message_count - ?
+               WHERE user_id = ?""",
+            (credits, user_id)
+        )
+
     # ==================== Backup Operations ====================
 
     async def export_data(self) -> Dict:
@@ -360,12 +447,14 @@ class DatabaseOperations:
         subs = await self.db.fetch_all("SELECT * FROM subscriptions")
         stats = await self.db.fetch_all("SELECT * FROM bot_stats")
         payments = await self.db.fetch_all("SELECT * FROM payments")
+        redeem_codes = await self.db.fetch_all("SELECT * FROM redeem_codes")
 
         return {
             "users": [dict(row) for row in users],
             "subscriptions": [dict(row) for row in subs],
             "bot_stats": [dict(row) for row in stats],
             "payments": [dict(row) for row in payments],
+            "redeem_codes": [dict(row) for row in redeem_codes],
             "exported_at": datetime.now().isoformat()
         }
 

@@ -3,6 +3,7 @@ Command handlers for user-facing bot commands.
 """
 
 import logging
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler
 
@@ -39,6 +40,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             InlineKeyboardButton("⚙️ Settings", callback_data="settings"),
             InlineKeyboardButton("💎 Premium", callback_data="subscribe")
         ],
+        [InlineKeyboardButton("🎁 Redeem Code", callback_data="redeem_menu")],
         [InlineKeyboardButton("❓ Help", callback_data="help")]
     ]
 
@@ -204,6 +206,73 @@ async def generate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     logger.info(f"User {user.id} opened generate menu")
 
 
+async def redeem_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /redeem command - Redeem a code for premium or credits."""
+    db_ops: DatabaseOperations = context.bot_data["db_ops"]
+    user = update.effective_user
+
+    user_data = await db_ops.get_user(user.id)
+    lang = user_data.get("language_code", "en") if user_data else "en"
+
+    if not context.args:
+        keyboard = [[InlineKeyboardButton("🔙 " + get_text("back_btn", lang), callback_data="main_menu")]]
+        await update.message.reply_text(
+            get_text("redeem_enter_code", lang),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        return
+
+    code = context.args[0].upper()
+
+    # Validate code
+    code_data = await db_ops.get_redeem_code(code)
+
+    if not code_data:
+        await update.message.reply_text(get_text("redeem_invalid", lang))
+        return
+
+    if code_data['is_used']:
+        await update.message.reply_text(get_text("redeem_already_used", lang))
+        return
+
+    if code_data['is_revoked']:
+        await update.message.reply_text(get_text("redeem_invalid", lang))
+        return
+
+    # Check expiry
+    if code_data['expires_at']:
+        expiry = datetime.fromisoformat(code_data['expires_at'])
+        if datetime.now() > expiry:
+            await update.message.reply_text(get_text("redeem_expired", lang))
+            return
+
+    # Apply benefit
+    code_type = code_data['code_type']
+
+    if code_type in ['premium_monthly', 'premium_yearly']:
+        duration_days = code_data['duration_days']
+        await db_ops.grant_premium(user.id, duration_days)
+        await db_ops.use_redeem_code(code, user.id)
+
+        await update.message.reply_text(
+            get_text("redeem_success_premium", lang, days=duration_days),
+            parse_mode="Markdown"
+        )
+        logger.info(f"User {user.id} redeemed premium code {code} for {duration_days} days")
+
+    elif code_type == 'credits':
+        credits = code_data['credits']
+        await db_ops.add_user_credits(user.id, credits)
+        await db_ops.use_redeem_code(code, user.id)
+
+        await update.message.reply_text(
+            get_text("redeem_success_credits", lang, credits=credits),
+            parse_mode="Markdown"
+        )
+        logger.info(f"User {user.id} redeemed credits code {code} for {credits} credits")
+
+
 def setup_command_handlers(app) -> None:
     """Register all command handlers."""
     app.add_handler(CommandHandler("start", start_command))
@@ -213,4 +282,5 @@ def setup_command_handlers(app) -> None:
     app.add_handler(CommandHandler("settings", settings_command))
     app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_handler(CommandHandler("generate", generate_command))
+    app.add_handler(CommandHandler("redeem", redeem_command))
 

@@ -5,7 +5,9 @@ Callback query handlers for inline keyboard interactions.
 import logging
 import io
 import json
-from datetime import datetime
+import secrets
+import string
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
 
@@ -56,6 +58,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 InlineKeyboardButton("⚙️ Settings", callback_data="settings"),
                 InlineKeyboardButton("💎 Premium", callback_data="subscribe")
             ],
+            [InlineKeyboardButton("🎁 Redeem Code", callback_data="redeem_menu")],
             [InlineKeyboardButton("❓ Help", callback_data="help")]
         ]
         if is_admin:
@@ -344,6 +347,7 @@ Example:
             [InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")],
             [InlineKeyboardButton("👥 Users", callback_data="admin_users")],
             [InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")],
+            [InlineKeyboardButton("🎟️ Generate Codes", callback_data="admin_gen_codes")],
             [InlineKeyboardButton("📋 Logs", callback_data="admin_logs")],
             [InlineKeyboardButton("⚙️ Config", callback_data="admin_config")],
             [InlineKeyboardButton("💾 Backup", callback_data="admin_backup")]
@@ -355,6 +359,150 @@ Example:
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
+
+    # Redeem code menu
+    elif data == "redeem_menu":
+        keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]]
+        await query.edit_message_text(
+            get_text("redeem_enter_code", lang),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    # Admin generate codes menu
+    elif data == "admin_gen_codes":
+        if user.id != settings.admin_user_id:
+            await query.edit_message_text("🚫 Unauthorized access.")
+            return
+
+        # Get code stats
+        code_stats = await db_ops.get_redeem_code_stats()
+
+        text = f"""🎟️ **Generate Redeem Codes**
+
+📊 **Code Statistics:**
+• Total: {code_stats['total']}
+• Used: {code_stats['used']}
+• Active: {code_stats['active']}
+• Revoked: {code_stats['revoked']}
+
+**Quick Generate:**
+Select a code type to generate:"""
+
+        keyboard = [
+            [InlineKeyboardButton("💎 Premium Monthly (30d)", callback_data="gen_code_premium_monthly_30")],
+            [InlineKeyboardButton("💎 Premium Yearly (365d)", callback_data="gen_code_premium_yearly_365")],
+            [InlineKeyboardButton("🎁 50 Credits", callback_data="gen_code_credits_50")],
+            [InlineKeyboardButton("🎁 100 Credits", callback_data="gen_code_credits_100")],
+            [InlineKeyboardButton("📋 View All Codes", callback_data="admin_list_codes")],
+            [InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]
+        ]
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # Quick code generation callbacks
+    elif data.startswith("gen_code_"):
+        if user.id != settings.admin_user_id:
+            await query.edit_message_text("🚫 Unauthorized access.")
+            return
+
+        parts = data.replace("gen_code_", "").split("_")
+
+        def generate_code_string(code_type: str) -> str:
+            chars = string.ascii_uppercase + string.digits
+            segment = lambda: ''.join(secrets.choice(chars) for _ in range(4))
+            if code_type == "premium_monthly":
+                prefix = "PREM"
+            elif code_type == "premium_yearly":
+                prefix = "YEAR"
+            elif code_type == "credits":
+                prefix = "CRED"
+            else:
+                prefix = "CODE"
+            return f"{prefix}-{segment()}-{segment()}-{segment()}"
+
+        if parts[0] == "premium":
+            code_type = f"premium_{parts[1]}"
+            duration_days = int(parts[2])
+            credits = 0
+        else:  # credits
+            code_type = "credits"
+            credits = int(parts[1])
+            duration_days = 0
+
+        # Generate single code
+        code = generate_code_string(code_type)
+        while await db_ops.get_redeem_code(code):
+            code = generate_code_string(code_type)
+
+        expires_at = datetime.now() + timedelta(days=90)
+
+        await db_ops.create_redeem_code(
+            code=code.upper(),
+            code_type=code_type,
+            duration_days=duration_days,
+            credits=credits,
+            expires_at=expires_at,
+            created_by=user.id
+        )
+
+        if code_type.startswith("premium"):
+            benefit = f"{duration_days} days premium"
+        else:
+            benefit = f"{credits} credits"
+
+        text = f"""✅ **Code Generated!**
+
+🎟️ Code: `{code}`
+📦 Type: {code_type}
+🎁 Benefit: {benefit}
+📅 Expires: {expires_at.strftime('%Y-%m-%d')}
+
+Use `/generate_code` command for bulk generation."""
+
+        keyboard = [
+            [InlineKeyboardButton("➕ Generate Another", callback_data="admin_gen_codes")],
+            [InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]
+        ]
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        logger.info(f"Admin generated code {code} via callback")
+
+    # List all codes
+    elif data == "admin_list_codes":
+        if user.id != settings.admin_user_id:
+            await query.edit_message_text("🚫 Unauthorized access.")
+            return
+
+        codes = await db_ops.get_all_redeem_codes(limit=20)
+        stats = await db_ops.get_redeem_code_stats()
+
+        if not codes:
+            text = "📭 No redeem codes found."
+        else:
+            text = f"🎟️ **Redeem Codes**\n\n"
+            text += f"📊 Total: {stats['total']} | ✅ Used: {stats['used']} | 🟢 Active: {stats['active']} | ❌ Revoked: {stats['revoked']}\n\n"
+
+            for code in codes[:15]:
+                status = "✅" if code['is_used'] else ("❌" if code['is_revoked'] else "🟢")
+                code_str = code['code']
+                code_type = code['code_type'][:10]
+                text += f"{status} `{code_str}` - {code_type}"
+                if code['is_used']:
+                    text += f" (by {code['used_by']})"
+                text += "\n"
+
+            if len(codes) > 15:
+                text += f"\n... and {len(codes) - 15} more"
+
+            text += "\n\n💡 Use `/list_codes` for full list\n💡 Use `/revoke_code <code>` to revoke"
+
+        keyboard = [
+            [InlineKeyboardButton("➕ Generate Codes", callback_data="admin_gen_codes")],
+            [InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]
+        ]
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 def setup_callback_handlers(app) -> None:

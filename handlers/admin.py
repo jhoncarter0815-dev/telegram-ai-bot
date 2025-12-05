@@ -4,7 +4,10 @@ Admin command handlers restricted to admin user ID.
 
 import logging
 import json
-from datetime import datetime
+import io
+import secrets
+import string
+from datetime import datetime, timedelta
 from functools import wraps
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler
@@ -36,12 +39,13 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         [InlineKeyboardButton("📊 Statistics", callback_data="admin_stats")],
         [InlineKeyboardButton("👥 Users", callback_data="admin_users")],
         [InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("🎟️ Generate Codes", callback_data="admin_gen_codes")],
         [InlineKeyboardButton("📋 Logs", callback_data="admin_logs")],
         [InlineKeyboardButton("⚙️ Config", callback_data="admin_config")],
         [InlineKeyboardButton("💾 Backup", callback_data="admin_backup")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await update.message.reply_text(
         "🔐 **Admin Panel**\n\nSelect an option:",
         reply_markup=reply_markup,
@@ -339,6 +343,182 @@ async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
+def generate_code_string(code_type: str) -> str:
+    """Generate a unique redeem code string."""
+    chars = string.ascii_uppercase + string.digits
+    segment = lambda: ''.join(secrets.choice(chars) for _ in range(4))
+
+    if code_type == "premium_monthly":
+        prefix = "PREM"
+    elif code_type == "premium_yearly":
+        prefix = "YEAR"
+    elif code_type == "credits":
+        prefix = "CRED"
+    else:
+        prefix = "CODE"
+
+    return f"{prefix}-{segment()}-{segment()}-{segment()}"
+
+
+@admin_only
+async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate redeem codes."""
+    db_ops: DatabaseOperations = context.bot_data["db_ops"]
+
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "🎟️ **Generate Redeem Codes**\n\n"
+            "Usage: `/generate_code <type> [duration/credits] [quantity]`\n\n"
+            "**Types:**\n"
+            "• `premium_monthly` - Premium for X days (default: 30)\n"
+            "• `premium_yearly` - Premium for X days (default: 365)\n"
+            "• `credits` - Add X message credits\n\n"
+            "**Examples:**\n"
+            "• `/generate_code premium_monthly 30 5` - 5 codes for 30-day premium\n"
+            "• `/generate_code premium_yearly 365` - 1 code for 365-day premium\n"
+            "• `/generate_code credits 100 10` - 10 codes for 100 credits each",
+            parse_mode="Markdown"
+        )
+        return
+
+    code_type = context.args[0].lower()
+    valid_types = ["premium_monthly", "premium_yearly", "credits"]
+
+    if code_type not in valid_types:
+        await update.message.reply_text(
+            f"❌ Invalid type. Must be one of: {', '.join(valid_types)}"
+        )
+        return
+
+    # Parse duration/credits and quantity
+    if code_type == "credits":
+        credits = int(context.args[1]) if len(context.args) > 1 else 50
+        duration_days = 0
+    else:
+        duration_days = int(context.args[1]) if len(context.args) > 1 else (30 if "monthly" in code_type else 365)
+        credits = 0
+
+    quantity = int(context.args[2]) if len(context.args) > 2 else (int(context.args[1]) if len(context.args) > 1 and code_type != "credits" else 1)
+    if len(context.args) == 2 and code_type != "credits":
+        quantity = 1
+
+    quantity = min(quantity, 100)  # Limit to 100 codes at a time
+
+    # Generate codes
+    generated_codes = []
+    expires_at = datetime.now() + timedelta(days=90)  # Codes expire in 90 days
+
+    status_msg = await update.message.reply_text(f"⏳ Generating {quantity} codes...")
+
+    for _ in range(quantity):
+        code = generate_code_string(code_type)
+        # Ensure unique code
+        while await db_ops.get_redeem_code(code):
+            code = generate_code_string(code_type)
+
+        await db_ops.create_redeem_code(
+            code=code.upper(),
+            code_type=code_type,
+            duration_days=duration_days,
+            credits=credits,
+            expires_at=expires_at,
+            created_by=update.effective_user.id
+        )
+        generated_codes.append(code)
+
+    # Send codes
+    if quantity <= 5:
+        codes_text = "\n".join([f"• `{code}`" for code in generated_codes])
+        await status_msg.edit_text(
+            f"✅ **Generated {quantity} code(s):**\n\n"
+            f"Type: {code_type}\n"
+            f"{'Duration: ' + str(duration_days) + ' days' if duration_days else 'Credits: ' + str(credits)}\n"
+            f"Expires: {expires_at.strftime('%Y-%m-%d')}\n\n"
+            f"{codes_text}",
+            parse_mode="Markdown"
+        )
+    else:
+        # Send as file
+        codes_content = f"Redeem Codes - {code_type}\n"
+        codes_content += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        codes_content += f"{'Duration: ' + str(duration_days) + ' days' if duration_days else 'Credits: ' + str(credits)}\n"
+        codes_content += f"Expires: {expires_at.strftime('%Y-%m-%d')}\n"
+        codes_content += "=" * 40 + "\n\n"
+        codes_content += "\n".join(generated_codes)
+
+        file = io.BytesIO(codes_content.encode('utf-8'))
+        file.name = f"codes_{code_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+        await update.message.reply_document(
+            document=file,
+            caption=f"✅ Generated {quantity} {code_type} codes"
+        )
+        await status_msg.delete()
+
+    logger.info(f"Admin generated {quantity} {code_type} codes")
+
+
+@admin_only
+async def list_codes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List all redeem codes."""
+    db_ops: DatabaseOperations = context.bot_data["db_ops"]
+
+    codes = await db_ops.get_all_redeem_codes(limit=50)
+    stats = await db_ops.get_redeem_code_stats()
+
+    if not codes:
+        await update.message.reply_text("📭 No redeem codes found.")
+        return
+
+    text = f"🎟️ **Redeem Codes**\n\n"
+    text += f"📊 Total: {stats['total']} | ✅ Used: {stats['used']} | 🟢 Active: {stats['active']} | ❌ Revoked: {stats['revoked']}\n\n"
+
+    for code in codes[:20]:
+        status = "✅" if code['is_used'] else ("❌" if code['is_revoked'] else "🟢")
+        code_str = code['code']
+        code_type = code['code_type'][:10]
+        text += f"{status} `{code_str}` - {code_type}"
+        if code['is_used']:
+            text += f" (by {code['used_by']})"
+        text += "\n"
+
+    if len(codes) > 20:
+        text += f"\n... and {len(codes) - 20} more"
+
+    text += "\n💡 Use `/revoke_code <code>` to revoke a code"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+@admin_only
+async def revoke_code_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Revoke a redeem code."""
+    db_ops: DatabaseOperations = context.bot_data["db_ops"]
+
+    if not context.args:
+        await update.message.reply_text("Usage: `/revoke_code <code>`", parse_mode="Markdown")
+        return
+
+    code = context.args[0].upper()
+    existing = await db_ops.get_redeem_code(code)
+
+    if not existing:
+        await update.message.reply_text(f"❌ Code `{code}` not found.", parse_mode="Markdown")
+        return
+
+    if existing['is_used']:
+        await update.message.reply_text(f"⚠️ Code `{code}` has already been used.", parse_mode="Markdown")
+        return
+
+    if existing['is_revoked']:
+        await update.message.reply_text(f"⚠️ Code `{code}` is already revoked.", parse_mode="Markdown")
+        return
+
+    await db_ops.revoke_redeem_code(code)
+    await update.message.reply_text(f"✅ Code `{code}` has been revoked.", parse_mode="Markdown")
+    logger.info(f"Admin revoked code {code}")
+
+
 def setup_admin_handlers(app) -> None:
     """Register admin command handlers."""
     app.add_handler(CommandHandler("admin", admin_command))
@@ -352,3 +532,6 @@ def setup_admin_handlers(app) -> None:
     app.add_handler(CommandHandler("logs", logs_command))
     app.add_handler(CommandHandler("backup", backup_command))
     app.add_handler(CommandHandler("config", config_command))
+    app.add_handler(CommandHandler("generate_code", generate_code_command))
+    app.add_handler(CommandHandler("list_codes", list_codes_command))
+    app.add_handler(CommandHandler("revoke_code", revoke_code_command))
