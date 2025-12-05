@@ -389,15 +389,15 @@ Example:
         # Get code stats
         code_stats = await db_ops.get_redeem_code_stats()
 
-        text = f"""🎟️ **Generate Redeem Codes**
+        text = f"""🎟️ <b>Generate Redeem Codes</b>
 
-📊 **Code Statistics:**
+📊 <b>Code Statistics:</b>
 • Total: {code_stats['total']}
 • Used: {code_stats['used']}
 • Active: {code_stats['active']}
 • Revoked: {code_stats['revoked']}
 
-**Quick Generate:**
+<b>Quick Generate:</b>
 Select a code type to generate:"""
 
         keyboard = [
@@ -409,7 +409,7 @@ Select a code type to generate:"""
             [InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]
         ]
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     # Quick code generation callbacks
     elif data.startswith("gen_code_"):
@@ -459,24 +459,26 @@ Select a code type to generate:"""
 
         if code_type.startswith("premium"):
             benefit = f"{duration_days} days premium"
+            type_display = "Premium Monthly" if "monthly" in code_type else "Premium Yearly"
         else:
             benefit = f"{credits} credits"
+            type_display = "Credits"
 
-        text = f"""✅ **Code Generated!**
+        text = f"""✅ <b>Code Generated!</b>
 
-🎟️ Code: `{code}`
-📦 Type: {code_type}
+🎟️ Code: <code>{code}</code>
+📦 Type: {type_display}
 🎁 Benefit: {benefit}
 📅 Expires: {expires_at.strftime('%Y-%m-%d')}
 
-Use `/generate_code` command for bulk generation."""
+Use /generate_code command for bulk generation."""
 
         keyboard = [
             [InlineKeyboardButton("➕ Generate Another", callback_data="admin_gen_codes")],
             [InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]
         ]
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
         logger.info(f"Admin generated code {code} via callback")
 
     # List all codes
@@ -491,14 +493,21 @@ Use `/generate_code` command for bulk generation."""
         if not codes:
             text = "📭 No redeem codes found."
         else:
-            text = f"🎟️ **Redeem Codes**\n\n"
+            text = f"🎟️ <b>Redeem Codes</b>\n\n"
             text += f"📊 Total: {stats['total']} | ✅ Used: {stats['used']} | 🟢 Active: {stats['active']} | ❌ Revoked: {stats['revoked']}\n\n"
 
             for code in codes[:15]:
                 status = "✅" if code['is_used'] else ("❌" if code['is_revoked'] else "🟢")
                 code_str = code['code']
-                code_type = code['code_type'][:10]
-                text += f"{status} `{code_str}` - {code_type}"
+                # Display type without underscores
+                code_type_raw = code['code_type']
+                if code_type_raw == "premium_monthly":
+                    type_display = "Monthly"
+                elif code_type_raw == "premium_yearly":
+                    type_display = "Yearly"
+                else:
+                    type_display = "Credits"
+                text += f"{status} <code>{code_str}</code> - {type_display}"
                 if code['is_used']:
                     text += f" (by {code['used_by']})"
                 text += "\n"
@@ -506,14 +515,14 @@ Use `/generate_code` command for bulk generation."""
             if len(codes) > 15:
                 text += f"\n... and {len(codes) - 15} more"
 
-            text += "\n\n💡 Use `/list_codes` for full list\n💡 Use `/revoke_code <code>` to revoke"
+            text += "\n\n💡 Use /list_codes for full list\n💡 Use /revoke_code to revoke"
 
         keyboard = [
             [InlineKeyboardButton("➕ Generate Codes", callback_data="admin_gen_codes")],
             [InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]
         ]
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 
 def setup_callback_handlers(app) -> None:
