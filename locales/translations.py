@@ -58,9 +58,9 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "ru": "💎 **Премиум Подписка**\n\n✨ Преимущества:\n• Безлимитные сообщения\n• Все модели ИИ\n• Голос и изображения\n• Приоритетный ответ\n\n💫 Выберите план:",
     },
     "settings_menu": {
-        "en": "⚙️ **Settings**\n\nCurrent model: {model}\nLanguage: {language}\nSubscription: {subscription}",
-        "ru": "⚙️ **Настройки**\n\nТекущая модель: {model}\nЯзык: {language}\nПодписка: {subscription}",
-        "es": "⚙️ **Configuración**\n\nModelo actual: {model}\nIdioma: {language}\nSuscripción: {subscription}",
+        "en": "⚙️ **Settings**\n\nCurrent model: {model}\nLanguage: {lang_display}\nSubscription: {subscription}",
+        "ru": "⚙️ **Настройки**\n\nТекущая модель: {model}\nЯзык: {lang_display}\nПодписка: {subscription}",
+        "es": "⚙️ **Configuración**\n\nModelo actual: {model}\nIdioma: {lang_display}\nSuscripción: {subscription}",
     },
     "model_changed": {
         "en": "✅ AI model changed to: {model}",

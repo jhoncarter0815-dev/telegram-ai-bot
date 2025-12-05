@@ -92,7 +92,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         text = get_text("settings_menu", lang,
             model=model,
-            language=LANGUAGES.get(lang, lang),
+            lang_display=LANGUAGES.get(lang, lang),
             subscription=sub_info["tier_name"]
         )
 
