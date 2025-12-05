@@ -85,25 +85,31 @@ async def post_shutdown(application: Application) -> None:
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Global error handler for unhandled exceptions."""
-    logger.error(f"Exception while handling update: {context.error}")
-    
+    import traceback
+    error_trace = ''.join(traceback.format_exception(type(context.error), context.error, context.error.__traceback__))
+    logger.error(f"Exception while handling update: {context.error}\n{error_trace}")
+
     # Log to database if available
     if "db_ops" in context.bot_data:
         user_id = None
         if isinstance(update, Update) and update.effective_user:
             user_id = update.effective_user.id
-        
-        await context.bot_data["db_ops"].log_error(
-            error_type=type(context.error).__name__,
-            error_message=str(context.error),
-            user_id=user_id
-        )
-    
-    # Notify user of error
+
+        try:
+            await context.bot_data["db_ops"].log_error(
+                error_type=type(context.error).__name__,
+                error_message=str(context.error)[:500],
+                user_id=user_id
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to log error to database: {db_err}")
+
+    # Notify user of error with details for debugging
     if isinstance(update, Update) and update.effective_message:
         try:
+            error_msg = str(context.error)[:200]
             await update.effective_message.reply_text(
-                "❌ An unexpected error occurred. Please try again later."
+                f"❌ Error: {error_msg}"
             )
         except Exception:
             pass

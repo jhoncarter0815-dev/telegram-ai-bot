@@ -26,19 +26,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Main callback handler that routes to specific handlers."""
     query = update.callback_query
     await query.answer()
-    
+
     data = query.data
     user = update.effective_user
-    
-    db_ops: DatabaseOperations = context.bot_data["db_ops"]
-    sub_service: SubscriptionService = context.bot_data["sub_service"]
-    ai_service: AIService = context.bot_data["ai_service"]
-    
-    user_data = await db_ops.get_user(user.id)
-    lang = user_data.get("language_code", "en") if user_data else "en"
-    
-    # Check if user is admin
-    is_admin = user.id == settings.admin_user_id
+
+    logger.info(f"Callback received: {data} from user {user.id}")
+
+    try:
+        db_ops: DatabaseOperations = context.bot_data["db_ops"]
+        sub_service: SubscriptionService = context.bot_data["sub_service"]
+        ai_service: AIService = context.bot_data["ai_service"]
+
+        user_data = await db_ops.get_user(user.id)
+        lang = user_data.get("language_code", "en") if user_data else "en"
+
+        # Check if user is admin
+        is_admin = user.id == settings.admin_user_id
+    except Exception as e:
+        logger.error(f"Callback init error: {e}")
+        await query.edit_message_text(f"❌ Error: {e}")
+        return
 
     # Route callbacks
     if data == "main_menu":
@@ -80,26 +87,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     elif data == "settings":
         logger.info(f"User {user.id} opened settings")
-        try:
-            model = user_data.get("preferred_model", "gemini-2.0-flash") if user_data else "gemini-2.0-flash"
-            sub_info = await sub_service.get_subscription_info(user.id)
+        model = user_data.get("preferred_model", "gemini-2.0-flash") if user_data else "gemini-2.0-flash"
+        sub_info = await sub_service.get_subscription_info(user.id)
 
-            text = get_text("settings_menu", lang,
-                model=model,
-                language=LANGUAGES.get(lang, lang),
-                subscription=sub_info["tier_name"]
-            )
+        text = get_text("settings_menu", lang,
+            model=model,
+            language=LANGUAGES.get(lang, lang),
+            subscription=sub_info["tier_name"]
+        )
 
-            keyboard = [
-                [InlineKeyboardButton("🤖 Change Model", callback_data="select_model")],
-                [InlineKeyboardButton("🌐 Change Language", callback_data="select_language")],
-                [InlineKeyboardButton("💎 Subscription", callback_data="subscribe")],
-                [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
-            ]
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-        except Exception as e:
-            logger.error(f"Settings error: {e}")
-            await query.answer(f"Error: {e}", show_alert=True)
+        keyboard = [
+            [InlineKeyboardButton("🤖 Change Model", callback_data="select_model")],
+            [InlineKeyboardButton("🌐 Change Language", callback_data="select_language")],
+            [InlineKeyboardButton("💎 Subscription", callback_data="subscribe")],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     
     elif data == "select_model":
         models = ai_service.get_available_models()
