@@ -49,14 +49,18 @@ class Database:
                 first_name TEXT,
                 last_name TEXT,
                 language_code TEXT DEFAULT 'en',
-                preferred_model TEXT DEFAULT 'gpt-4o-mini',
+                preferred_model TEXT DEFAULT 'gemini-2.0-flash',
                 is_premium INTEGER DEFAULT 0,
                 is_banned INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 message_count INTEGER DEFAULT 0,
-                total_tokens_used INTEGER DEFAULT 0
+                total_tokens_used INTEGER DEFAULT 0,
+                message_credits INTEGER DEFAULT 0
             );
+
+            -- Add message_credits column if it doesn't exist (for existing databases)
+            -- This is handled separately in migration
             
             -- Subscriptions table
             CREATE TABLE IF NOT EXISTS subscriptions (
@@ -136,6 +140,28 @@ class Database:
                 FOREIGN KEY (created_by) REFERENCES users(user_id)
             );
 
+            -- Broadcast history table
+            CREATE TABLE IF NOT EXISTS broadcasts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                target TEXT DEFAULT 'all',
+                total_recipients INTEGER DEFAULT 0,
+                successful INTEGER DEFAULT 0,
+                failed INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (admin_id) REFERENCES users(user_id)
+            );
+
+            -- User sessions table (for persisting multi-step states)
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                user_id INTEGER PRIMARY KEY,
+                session_state TEXT,
+                session_data TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            );
+
             -- Create indexes for better query performance
             CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
             CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
@@ -144,9 +170,32 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_stats_date ON bot_stats(stat_date);
             CREATE INDEX IF NOT EXISTS idx_redeem_codes_code ON redeem_codes(code);
             CREATE INDEX IF NOT EXISTS idx_redeem_codes_used ON redeem_codes(is_used);
+            CREATE INDEX IF NOT EXISTS idx_broadcasts_admin ON broadcasts(admin_id);
+            CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
         """)
         await self.connection.commit()
+
+        # Run migrations for existing databases
+        await self._run_migrations()
         logger.info("Database tables created/verified")
+
+    async def _run_migrations(self) -> None:
+        """Run database migrations for schema updates."""
+        try:
+            # Check if message_credits column exists in users table
+            cursor = await self.connection.execute("PRAGMA table_info(users)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            if 'message_credits' not in column_names:
+                await self.connection.execute(
+                    "ALTER TABLE users ADD COLUMN message_credits INTEGER DEFAULT 0"
+                )
+                logger.info("Migration: Added message_credits column to users")
+
+            await self.connection.commit()
+        except Exception as e:
+            logger.warning(f"Migration check: {e}")
     
     async def execute(self, query: str, params: tuple = ()) -> aiosqlite.Cursor:
         """Execute a query and return cursor."""

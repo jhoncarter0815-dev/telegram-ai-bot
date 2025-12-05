@@ -254,6 +254,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Send broadcast
     sent = 0
     failed = 0
+    total_recipients = len(users)
     status_msg = await update.message.reply_text("📤 Broadcasting...")
 
     for user in users:
@@ -267,6 +268,16 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         except Exception as e:
             failed += 1
             logger.debug(f"Failed to send broadcast to {user['user_id']}: {e}")
+
+    # Save broadcast to history
+    await db_ops.create_broadcast(
+        admin_id=update.effective_user.id,
+        message=message,
+        target=target if target in ["all", "premium"] else "all",
+        total_recipients=total_recipients,
+        successful=sent,
+        failed=failed
+    )
 
     await status_msg.edit_text(f"✅ Broadcast complete!\nSent: {sent}, Failed: {failed}")
     logger.info(f"Admin broadcast: sent={sent}, failed={failed}")

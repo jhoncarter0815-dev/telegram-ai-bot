@@ -434,9 +434,91 @@ class DatabaseOperations:
         """Add message credits to a user."""
         await self.db.execute(
             """UPDATE users
-               SET message_count = message_count - ?
+               SET message_credits = message_credits + ?
                WHERE user_id = ?""",
             (credits, user_id)
+        )
+
+    async def get_user_credits(self, user_id: int) -> int:
+        """Get user's message credits."""
+        row = await self.db.fetch_one(
+            "SELECT message_credits FROM users WHERE user_id = ?",
+            (user_id,)
+        )
+        return row["message_credits"] if row and row["message_credits"] else 0
+
+    async def use_user_credit(self, user_id: int) -> bool:
+        """Use one message credit. Returns True if credit was available."""
+        credits = await self.get_user_credits(user_id)
+        if credits > 0:
+            await self.db.execute(
+                """UPDATE users SET message_credits = message_credits - 1
+                   WHERE user_id = ? AND message_credits > 0""",
+                (user_id,)
+            )
+            return True
+        return False
+
+    # ==================== Broadcast Operations ====================
+
+    async def create_broadcast(
+        self,
+        admin_id: int,
+        message: str,
+        target: str = "all",
+        total_recipients: int = 0,
+        successful: int = 0,
+        failed: int = 0
+    ) -> int:
+        """Record a broadcast message."""
+        cursor = await self.db.execute(
+            """INSERT INTO broadcasts
+               (admin_id, message, target, total_recipients, successful, failed)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (admin_id, message, target, total_recipients, successful, failed)
+        )
+        return cursor.lastrowid
+
+    async def get_broadcast_history(self, limit: int = 20) -> List[Dict]:
+        """Get broadcast history."""
+        rows = await self.db.fetch_all(
+            """SELECT * FROM broadcasts ORDER BY created_at DESC LIMIT ?""",
+            (limit,)
+        )
+        return [dict(row) for row in rows]
+
+    # ==================== Session Operations ====================
+
+    async def save_user_session(
+        self,
+        user_id: int,
+        session_state: str,
+        session_data: str = None
+    ) -> None:
+        """Save or update user session state."""
+        await self.db.execute(
+            """INSERT INTO user_sessions (user_id, session_state, session_data, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(user_id) DO UPDATE SET
+               session_state = excluded.session_state,
+               session_data = excluded.session_data,
+               updated_at = CURRENT_TIMESTAMP""",
+            (user_id, session_state, session_data)
+        )
+
+    async def get_user_session(self, user_id: int) -> Optional[Dict]:
+        """Get user session state."""
+        row = await self.db.fetch_one(
+            "SELECT * FROM user_sessions WHERE user_id = ?",
+            (user_id,)
+        )
+        return dict(row) if row else None
+
+    async def clear_user_session(self, user_id: int) -> None:
+        """Clear user session state."""
+        await self.db.execute(
+            "DELETE FROM user_sessions WHERE user_id = ?",
+            (user_id,)
         )
 
     # ==================== Backup Operations ====================
@@ -448,6 +530,10 @@ class DatabaseOperations:
         stats = await self.db.fetch_all("SELECT * FROM bot_stats")
         payments = await self.db.fetch_all("SELECT * FROM payments")
         redeem_codes = await self.db.fetch_all("SELECT * FROM redeem_codes")
+        broadcasts = await self.db.fetch_all("SELECT * FROM broadcasts")
+        conversations = await self.db.fetch_all(
+            "SELECT * FROM conversations ORDER BY created_at DESC LIMIT 10000"
+        )
 
         return {
             "users": [dict(row) for row in users],
@@ -455,6 +541,8 @@ class DatabaseOperations:
             "bot_stats": [dict(row) for row in stats],
             "payments": [dict(row) for row in payments],
             "redeem_codes": [dict(row) for row in redeem_codes],
+            "broadcasts": [dict(row) for row in broadcasts],
+            "conversations": [dict(row) for row in conversations],
             "exported_at": datetime.now().isoformat()
         }
 
