@@ -19,6 +19,13 @@ from utils.helpers import format_number, format_timestamp
 
 logger = logging.getLogger(__name__)
 
+
+def escape_html(text: str) -> str:
+    """Escape HTML special characters."""
+    if text is None:
+        return "N/A"
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 # Conversation states for generation
 WAITING_IMAGE_PROMPT = 1
 WAITING_VIDEO_PROMPT = 2
@@ -237,16 +244,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         users = await db_ops.get_all_users(limit=15)
-        text = "👥 **Recent Users:**\n\n"
+        text = "👥 <b>Recent Users:</b>\n\n"
         for u in users:
             premium = "💎" if u.get('is_premium') else ""
             banned = "🚫" if u.get('is_banned') else ""
-            text += f"• `{u['user_id']}` - @{u.get('username', 'N/A')} {premium}{banned}\n"
+            username = escape_html(u.get('username', 'N/A'))
+            text += f"• <code>{u['user_id']}</code> - @{username} {premium}{banned}\n"
 
-        text += "\n💡 Use `/users <id or username>` command for details"
+        text += "\n💡 Use <code>/users &lt;id or username&gt;</code> command for details"
 
         keyboard = [[InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     elif data == "admin_broadcast":
         if user.id != settings.admin_user_id:
@@ -275,15 +283,17 @@ Example:
         errors = await db_ops.get_recent_errors(limit=10)
 
         if not errors:
-            text = "📋 **Recent Errors:**\n\nNo recent errors logged. ✅"
+            text = "📋 <b>Recent Errors:</b>\n\nNo recent errors logged. ✅"
         else:
-            text = "📋 **Recent Errors:**\n\n"
+            text = "📋 <b>Recent Errors:</b>\n\n"
             for err in errors[:5]:
-                text += f"• [{format_timestamp(err.get('created_at'))}] {err.get('error_type', 'unknown')}\n"
-                text += f"  {err.get('error_message', '')[:80]}\n\n"
+                error_type = escape_html(err.get('error_type', 'unknown'))
+                error_msg = escape_html(err.get('error_message', '')[:80])
+                text += f"• [{format_timestamp(err.get('created_at'))}] {error_type}\n"
+                text += f"  {error_msg}\n\n"
 
         keyboard = [[InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     elif data == "admin_config":
         if user.id != settings.admin_user_id:
@@ -350,7 +360,8 @@ Example:
             [InlineKeyboardButton("🎟️ Generate Codes", callback_data="admin_gen_codes")],
             [InlineKeyboardButton("📋 Logs", callback_data="admin_logs")],
             [InlineKeyboardButton("⚙️ Config", callback_data="admin_config")],
-            [InlineKeyboardButton("💾 Backup", callback_data="admin_backup")]
+            [InlineKeyboardButton("💾 Backup", callback_data="admin_backup")],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
